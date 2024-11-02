@@ -1,64 +1,87 @@
-'timescale 1ns/1ps
+module fifo_tb;
+  parameter DATA_WIDTH = 8;
+  
+  reg clk, rst_n;
+  reg w_en, r_en;
+  reg [DATA_WIDTH-1:0] data_in;
+  wire [DATA_WIDTH-1:0] data_out;
+  wire full, empty;
+  
+  // FIFO instance
+  synchronous_fifo #(.DEPTH(8), .DATA_WIDTH(DATA_WIDTH)) s_fifo (
+    .clk(clk), 
+    .rst_n(rst_n), 
+    .w_en(w_en), 
+    .r_en(r_en), 
+    .data_in(data_in), 
+    .data_out(data_out), 
+    .full(full), 
+    .empty(empty)
+  );
 
-module sync_fifo(clk, reset, wr_en, rd_en, din, dout, full, empty);
+  // Clock generation
+  always #5 clk = ~clk;
+  
+  // Array for storing expected write data
+  reg [DATA_WIDTH-1:0] wdata_q[0:31];
+  integer wdata_index = 0;
+  integer rdata_index = 0;
+  integer i; // Declaring 'i' outside of the loops
 
-    input clk, reset;
-    input wr_en, rd_en;
+  initial begin
+    clk = 1'b0; 
+    rst_n = 1'b0;
+    w_en = 1'b0;
+    data_in = 0;
 
-    input [7:0] din;
-    
-    output full, empty;
+    // Reset the FIFO
+    repeat(10) @(posedge clk);
+    rst_n = 1'b1;
 
-    output [7:0] dout;
+    // Write data to FIFO
+    repeat(2) begin
+      for (i = 0; i < 30; i = i + 1) begin
+        @(posedge clk);
+        w_en = (i % 2 == 0) ? 1'b1 : 1'b0;
+        if (w_en & !full) begin
+          data_in = $random;
+          wdata_q[wdata_index] = data_in;  // Store data in array
+          wdata_index = wdata_index + 1;
+        end
+      end
+      #50;
+    end
+  end
 
-    reg [7:0] mem [0:15];
+  initial begin
+    r_en = 1'b0;
 
-    reg [4:0] addr;
+    // Wait some cycles after reset
+    repeat(20) @(posedge clk);
+    rst_n = 1'b1;
 
-    integer i;
+    // Read data from FIFO and compare with expected data
+    repeat(2) begin
+      for (i = 0; i < 30; i = i + 1) begin
+        @(posedge clk);
+        r_en = (i % 2 == 0) ? 1'b1 : 1'b0;
+        if (r_en & !empty) begin
+          #1;
+          if (data_out !== wdata_q[rdata_index]) 
+            $display("ERROR at time %0t: Expected data = %h, Read data = %h", $time, wdata_q[rdata_index], data_out);
+          else 
+            $display("PASS at time %0t: Expected data = %h, Read data = %h", $time, wdata_q[rdata_index], data_out);
+          rdata_index = rdata_index + 1;
+        end
+      end
+      #50;
+    end
 
-    assign full = (addr == 5'b10000) ? 1'b1 : 1'b0;
-    assign empty = (addr == 5'b00000) ? 1'b1 : 1'b0;
+    $finish;
+  end
 
-    always @ (posedge clk)
-       begin
-        if(reset)
-           begin 
-            addr = 4'b0000;
-            for (i=0; i<15; i=i+1)
-               mem[i] = 8'b0;
-            end
-
-        else if (wr_en|rd_en)
-           begin
-            if(wr_en && (!full))
-               begin
-                mem[addr] = din;
-                addr = addr + 1;
-               end
-        
-            else if (rd_en && (!empty))
-              begin
-               dout = mem[0];
-               mem[0] = mem[1];
-               mem[1] = mem[2];
-               mem[2] = mem[3];
-               mem[3] = mem[4];
-               mem[4] = mem[5];
-               mem[5] = mem[6];
-               mem[6] = mem[7];
-               mem[7] = mem[8];
-               mem[8] = mem[9];
-               mem[9] = mem[10];
-               mem[10] = mem[11];
-               mem[11] = mem[12];
-               mem[12] = mem[13];
-               mem[13] = mem[14];
-               mem[14] = mem[15];
-               addr = addr - 1;
-              end
-           end
-
-       end
-
+  initial begin 
+    $dumpfile("dump.vcd"); 
+    $dumpvars;
+  end
 endmodule
