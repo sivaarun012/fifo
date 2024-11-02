@@ -1,127 +1,56 @@
-`timescale 1ns/1ps
-module test_fifo;
-  reg clk, reset;
-  reg wr_en, rd_en;
-  reg [7:0] din;
-  wire [7:0 ]dout;
-  wire full, empty;
+module synchronous_fifo #(parameter DEPTH=8, DATA_WIDTH=8) (
+  input clk, rst_n,
+  input w_en, r_en,
+  input [DATA_WIDTH-1:0] data_in,
+  output reg [DATA_WIDTH-1:0] data_out,
+  output full, empty
+);
   
-  sync_fifo DUT(clk, reset, wr_en,rd_en, din, dout, full, empty); //instantiation
+  // Define PTR_WIDTH manually as clog2(DEPTH)
+  parameter PTR_WIDTH = (DEPTH <= 2) ? 1 :
+                        (DEPTH <= 4) ? 2 :
+                        (DEPTH <= 8) ? 3 :
+                        (DEPTH <= 16) ? 4 :
+                        (DEPTH <= 32) ? 5 :
+                        (DEPTH <= 64) ? 6 :
+                        (DEPTH <= 128) ? 7 : 8;
 
-  initial 
-     begin
-        clk =0;
-        $display("clock initialize---------------");
-     end
+  reg [PTR_WIDTH:0] w_ptr, r_ptr; // addition bit to detect full/empty condition
+  reg [DATA_WIDTH-1:0] fifo[DEPTH-1:0];
+  reg wrap_around;
   
-  task rst;
-     begin
-        #10  reset = 1;
-        $display("reset initialize---------------");
-        #20  reset = 0;                                           //20 ns delay
-     end
-  endtask
-  
-  always #5 clk = ~clk;//T=10 ns, f=100Mhz
-  
-  task wr_rd_init;
-    begin
-    	wr_en =0;
-      	rd_en =0;
-      	din = 0;
-      $display("write read initialize---------------");
+  // Set Default values on reset.
+  always @(posedge clk) begin
+    if (!rst_n) begin
+      w_ptr <= 0; 
+      r_ptr <= 0;
+      data_out <= 0;
     end
-  endtask
-  
-  task write;
-    input [7:0] wdata;
-    begin
-       @(posedge clk)
-       begin
-        wr_en =  1;
-        din =  wdata;
-      end
-    end
-  endtask
-  
-  task write16;
-    begin
-      write(8'hff);
-      write(8'hfe);
-      write(8'hfd);
-      write(8'hfc);
-      write(8'hfb);
-      write(8'hfa);
-      write(8'hf9);
-      write(8'hf8);
-      write(8'hf7);
-      write(8'hf6);
-      write(8'hf5);
-      write(8'hf4);
-      write(8'hf3);
-      write(8'hf2);
-      write(8'hf1);
-      write(8'hf0);
-      write(8'h11);
-      
-    end
-  endtask
-  
-  task endwrite;
-    begin
-      wr_en = 0;
-      din =  0;
-    end
-  endtask
-  
-  //read process
-  task read;
-    begin
-      @(posedge clk)
-      begin
-        rd_en = 1;
-      end
-    end
-  endtask
-  
-  task read16;
-    begin
-      read;read;read;read;
-      read;read;read;read;
-      read;read;read;read;
-      read;read;read;read;
-      
-    end
-  endtask
-  
-  task endread;
-    begin
-       @(posedge clk)
-      begin
-        rd_en = 0;
-      end
-    end
-  endtask
-  
-  initial 
-  begin
-    $display("start--- initialize---------------");
-    
-    rst;
-    wr_rd_init;
-    write16;
-    endwrite;
-    #2 read16;
-    #10 endread;
-    $display("stopped---------------");
-    
-    #10 $stop;//Stop the simulation
   end
   
-  //waveform generation
-  initial 
-  begin
-    $dumpfile("dump.vcd");
-    $dumpvars(1,test_fifo);
+  // To write data to FIFO
+  always @(posedge clk) begin
+    if (w_en & !full) begin
+      fifo[w_ptr[PTR_WIDTH-1:0]] <= data_in;
+      w_ptr <= w_ptr + 1;
+    end
   end
+  
+  // To read data from FIFO
+  always @(posedge clk) begin
+    if (r_en & !empty) begin
+      data_out <= fifo[r_ptr[PTR_WIDTH-1:0]];
+      r_ptr <= r_ptr + 1;
+    end
+  end
+  
+  // Wrap-around condition to check if MSB of write and read pointers are different
+  assign wrap_around = w_ptr[PTR_WIDTH] ^ r_ptr[PTR_WIDTH];
+  
+  // Full condition: MSB of write and read pointers are different and remaining bits are the same
+  assign full = wrap_around & (w_ptr[PTR_WIDTH-1:0] == r_ptr[PTR_WIDTH-1:0]);
+  
+  // Empty condition: All bits of write and read pointers are the same
+  assign empty = (w_ptr == r_ptr);
+
 endmodule
