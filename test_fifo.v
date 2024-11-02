@@ -1,50 +1,90 @@
-module synchronous_fifo #(parameter DEPTH=16, DATA_WIDTH=8) (
-  input clk, rst_n,
-  input w_en, r_en,
-  input [DATA_WIDTH-1:0] data_in,
-  output reg [DATA_WIDTH-1:0] data_out,
-  output full, empty
-);
+module fifo_tb;
+  parameter DATA_WIDTH = 8;
+  parameter DEPTH = 16;
   
-  // Define PTR_WIDTH manually as clog2(DEPTH)
-  parameter PTR_WIDTH = 4;
+  reg clk, rst_n;
+  reg w_en, r_en;
+  reg [DATA_WIDTH-1:0] data_in;
+  wire [DATA_WIDTH-1:0] data_out;
+  wire full, empty;
+  
+  // FIFO instance
+  synchronous_fifo #(.DEPTH(DEPTH), .DATA_WIDTH(DATA_WIDTH)) s_fifo (
+    .clk(clk), 
+    .rst_n(rst_n), 
+    .w_en(w_en), 
+    .r_en(r_en), 
+    .data_in(data_in), 
+    .data_out(data_out), 
+    .full(full), 
+    .empty(empty)
+  );
 
-  reg [PTR_WIDTH:0] w_ptr, r_ptr; // additional bit to detect full/empty condition
-  reg [DATA_WIDTH-1:0] fifo[DEPTH-1:0];
-  reg wrap_around;
+  // Clock generation
+  always #5 clk = ~clk;
   
-  // Set Default values on reset.
-  always @(posedge clk) begin
-    if (!rst_n) begin
-      w_ptr <= 0; 
-      r_ptr <= 0;
-      data_out <= 0;
-    end
-  end
-  
-  // To write data to FIFO
-  always @(posedge clk) begin
-    if (w_en & !full) begin
-      fifo[w_ptr[PTR_WIDTH-1:0]] <= data_in;
-      w_ptr <= w_ptr + 1;
-    end
-  end
-  
-  // To read data from FIFO
-  always @(posedge clk) begin
-    if (r_en & !empty) begin
-      data_out <= fifo[r_ptr[PTR_WIDTH-1:0]];
-      r_ptr <= r_ptr + 1;
-    end
-  end
-  
-  // Wrap-around condition to check if MSB of write and read pointers are different
-  assign wrap_around = w_ptr[PTR_WIDTH] ^ r_ptr[PTR_WIDTH];
-  
-  // Full condition: MSB of write and read pointers are different and remaining bits are the same
-  assign full = wrap_around & (w_ptr[PTR_WIDTH-1:0] == r_ptr[PTR_WIDTH-1:0]);
-  
-  // Empty condition: All bits of write and read pointers are the same
-  assign empty = (w_ptr == r_ptr);
+  // Array for storing expected write data
+  reg [DATA_WIDTH-1:0] wdata_q[0:31];
+  integer wdata_index = 0;
+  integer rdata_index = 0;
+  integer i; // Declaring 'i' outside of the loops
 
+  initial begin
+    clk = 1'b0; 
+    rst_n = 1'b0;
+    w_en = 1'b0;
+    data_in = 0;
+
+    // Reset the FIFO
+    repeat(10) @(posedge clk);
+    rst_n = 1'b1;
+    repeat(10) @(posedge clk); // Additional delay after reset
+
+    // Write data to FIFO
+    repeat(2) begin
+      for (i = 0; i < 30; i = i + 1) begin
+        @(posedge clk);
+        w_en = (i % 2 == 0) ? 1'b1 : 1'b0;
+        if (w_en & !full) begin
+          data_in = $random;
+          wdata_q[wdata_index] = data_in;  // Store data in array
+          wdata_index = wdata_index + 1;
+          $display("Time = %0t: Writing data = %h", $time, data_in); // Debugging
+        end
+      end
+      #50;
+    end
+  end
+
+  initial begin
+    r_en = 1'b0;
+
+    // Wait some cycles after reset
+    repeat(20) @(posedge clk);
+    rst_n = 1'b1;
+
+    // Read data from FIFO and compare with expected data
+    repeat(2) begin
+      for (i = 0; i < 30; i = i + 1) begin
+        @(posedge clk);
+        r_en = (i % 2 == 0) ? 1'b1 : 1'b0;
+        if (r_en & !empty) begin
+          #1;
+          if (data_out !== wdata_q[rdata_index]) 
+            $display("ERROR at time %0t: Expected data = %h, Read data = %h", $time, wdata_q[rdata_index], data_out);
+          else 
+            $display("PASS at time %0t: Expected data = %h, Read data = %h", $time, wdata_q[rdata_index], data_out);
+          rdata_index = rdata_index + 1;
+        end
+      end
+      #50;
+    end
+
+    $finish;
+  end
+
+  initial begin 
+    $dumpfile("dump.vcd"); 
+    $dumpvars;
+  end
 endmodule
