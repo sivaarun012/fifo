@@ -1,4 +1,4 @@
-module synchronous_fifo #(parameter DEPTH=8, DATA_WIDTH=8) (
+module synchronous_fifo #(parameter DEPTH=16, DATA_WIDTH=8) (
   input clk, rst_n,
   input w_en, r_en,
   input [DATA_WIDTH-1:0] data_in,
@@ -7,15 +7,9 @@ module synchronous_fifo #(parameter DEPTH=8, DATA_WIDTH=8) (
 );
   
   // Define PTR_WIDTH manually as clog2(DEPTH)
-  parameter PTR_WIDTH = (DEPTH <= 2) ? 1 :
-                        (DEPTH <= 4) ? 2 :
-                        (DEPTH <= 8) ? 3 :
-                        (DEPTH <= 16) ? 4 :
-                        (DEPTH <= 32) ? 5 :
-                        (DEPTH <= 64) ? 6 :
-                        (DEPTH <= 128) ? 7 : 8;
+  parameter PTR_WIDTH = 4;
 
-  reg [PTR_WIDTH:0] w_ptr, r_ptr; // addition bit to detect full/empty condition
+  reg [PTR_WIDTH:0] w_ptr, r_ptr; // additional bit to detect full/empty condition
   reg [DATA_WIDTH-1:0] fifo[DEPTH-1:0];
   reg wrap_around;
   
